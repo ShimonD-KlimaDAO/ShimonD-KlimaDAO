@@ -2,6 +2,7 @@
 pragma solidity ^0.8.10;
 
 import "../interfaces/IKlimaRetirementAggregator.sol";
+import "../interfaces/IKlimaCarbonRetirements.sol";
 import "../interfaces/IERC20.sol";
 
 import "./Offsetter.sol";
@@ -15,6 +16,7 @@ contract LiveOffset is Ownable, Offsetter {
     address private _specificAddress;
 
     address public immutable KlimaRetirementAggregator;
+    address public immutable KlimaCarbonRetirements;
 
     event LiveOffsetEventUpdate(
         uint _offsetPerLetter,
@@ -24,9 +26,14 @@ contract LiveOffset is Ownable, Offsetter {
         address _specificAddress
     );
 
+    event SingleOffsetIndex(
+        uint index
+    );
+
     constructor() {
 
         KlimaRetirementAggregator = 0xEde3bd57a04960E6469B70B4863cE1c9d9363Cb8;
+        KlimaCarbonRetirements = 0xac298CD34559B9AcfaedeA8344a977eceff1C0Fd;
         
     }
 
@@ -42,15 +49,16 @@ contract LiveOffset is Ownable, Offsetter {
     function singleOffset(string memory Name, string memory LoveLetter) onlyOffsetter public {
 
         /* single offset on behalf of the event */
-        _executeOffset(_offsetPerLetter, Name, LoveLetter);
+        _executeOffset(Name, LoveLetter);
 
     }
 
-    function _executeOffset(uint amount, string memory Name, string memory LoveLetter) private {
+    function _executeOffset(string memory Name, string memory LoveLetter) private {
 
         uint balance = IERC20(_carbonToken).balanceOf(address(this));
+        uint index;
 
-        require(balance >= amount, "All offsets allocated for the event have been used!");
+        require(balance >= _offsetPerLetter, "All offsets allocated for the event have been used!");
 
         /* Retire through aggregator */
             
@@ -58,11 +66,15 @@ contract LiveOffset is Ownable, Offsetter {
             address[] memory specific = new address[](1);
             specific[0] = _specificAddress;
             IKlimaRetirementAggregator(KlimaRetirementAggregator).retireCarbonSpecific(
-                _carbonToken, _carbonToken, amount, false, _eventBeneficiaryAddress, Name, LoveLetter, specific);
+                _carbonToken, _carbonToken, _offsetPerLetter, true, _eventBeneficiaryAddress, Name, LoveLetter, specific);
         } else {
             IKlimaRetirementAggregator(KlimaRetirementAggregator).retireCarbon(
-                _carbonToken, _carbonToken, amount, false, _eventBeneficiaryAddress, Name, LoveLetter);
+                _carbonToken, _carbonToken, _offsetPerLetter, true, _eventBeneficiaryAddress, Name, LoveLetter);
         }
+
+        (index,,) = IKlimaCarbonRetirements(KlimaCarbonRetirements).getRetirementTotals(_eventBeneficiaryAddress);
+
+        emit SingleOffsetIndex(index);
 
     }
 
@@ -87,6 +99,12 @@ contract LiveOffset is Ownable, Offsetter {
         );
 
     }
-    
 
+    /* called by the frontend to find pledge and display offset amount */
+    function getEventData() public view returns (address, uint) {
+
+        return (_eventBeneficiaryAddress, _offsetPerLetter);
+
+    }
+    
 }
